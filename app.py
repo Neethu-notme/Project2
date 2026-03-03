@@ -1,49 +1,51 @@
-import streamlit as st
+import re
+import pandas as pd
 import joblib
-import numpy as np
-from docx import Document
-import io
+from sklearn.pipeline import Pipeline
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
-# Load trained model & vectorizer
-model = joblib.load("svm_rbf_model.pkl")
-vectorizer = joblib.load("tfidf_vectorizer.pkl")
+# ---------------------------
+# TEXT CLEANING FUNCTION
+# ---------------------------
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r'[^a-zA-Z ]', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
 
-st.set_page_config(page_title="Resume Category Predictor", layout="centered")
+# Load dataset
+df = pd.read_csv("your_resume_dataset.csv")  # Must have Content & Category columns
 
-st.title("📄 Resume Category Predictor")
-st.write("Upload a .docx resume file to predict its category.")
+# Apply cleaning
+df["Cleaned_Content"] = df["Content"].apply(clean_text)
 
-# File uploader
-uploaded_file = st.file_uploader("Upload Resume (.docx only)", type=["docx"])
+X = df["Cleaned_Content"]
+y = df["Category"]
 
-def extract_text_from_docx(file):
-    doc = Document(file)
-    full_text = []
-    for para in doc.paragraphs:
-        full_text.append(para.text)
-    return " ".join(full_text)
+# Train Test Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
 
-if uploaded_file is not None:
-    
-    try:
-        # Extract text
-        resume_text = extract_text_from_docx(uploaded_file)
-        
-        if resume_text.strip() == "":
-            st.warning("The uploaded file appears to be empty.")
-        else:
-            # Transform using saved TF-IDF
-            text_vector = vectorizer.transform([resume_text])
-            
-            # Predict
-            prediction = model.predict(text_vector)[0]
-            
-            # Get confidence
-            probabilities = model.predict_proba(text_vector)
-            confidence = np.max(probabilities) * 100
-            
-            st.success(f"Predicted Category: {prediction}")
-            st.info(f"Confidence: {confidence:.2f}%")
-    
-    except Exception as e:
-        st.error("Error processing file. Please upload a valid .docx file.")
+# ---------------------------
+# CREATE PIPELINE
+# ---------------------------
+pipeline = Pipeline([
+    ("tfidf", TfidfVectorizer()),
+    ("svm", SVC(kernel="rbf", probability=True))
+])
+
+# Train
+pipeline.fit(X_train, y_train)
+
+# Accuracy
+y_pred = pipeline.predict(X_test)
+print("Accuracy:", accuracy_score(y_test, y_pred))
+
+# Save single file
+joblib.dump(pipeline, "resume_pipeline.pkl")
+
+print("Pipeline saved successfully!")
